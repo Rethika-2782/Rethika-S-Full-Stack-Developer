@@ -49,6 +49,80 @@ if (nodemailer && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
   });
 }
 
+// Helper to send transactional email via Brevo REST API (300 free emails/day)
+async function sendBrevoEmail({ name, email, subject, message, theme }) {
+  const brevoApiKey = process.env.BREVO_API_KEY;
+  if (!brevoApiKey) {
+    console.log('Brevo note: BREVO_API_KEY not configured yet in .env');
+    return false;
+  }
+
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || 'rethikas2782@gmail.com';
+  const recipientEmail = process.env.NOTIFICATION_EMAIL || 'rethikas2782@gmail.com';
+
+  const bodyData = {
+    sender: { name: 'Portfolio Concierge', email: senderEmail },
+    to: [{ email: recipientEmail, name: 'Rethika S' }],
+    replyTo: { email: email, name: name },
+    subject: `🏛️ [Portfolio Inquiry] ${subject || 'New Contact'} from ${name}`,
+    htmlContent: `
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+        <div style="background: #1C1917; padding: 24px; text-align: center; color: #C5A059;">
+          <h2 style="margin: 0; font-family: Georgia, serif; letter-spacing: 0.05em;">RETHIKA S — ATELIER CONCIERGE</h2>
+          <p style="margin: 6px 0 0; font-size: 13px; color: #a8a29e;">New priority inquiry received</p>
+        </div>
+        <div style="padding: 28px;">
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <tr>
+              <td style="padding: 8px 0; color: #71717a; font-size: 14px; width: 120px;"><strong>Client Name:</strong></td>
+              <td style="padding: 8px 0; color: #18181b; font-size: 15px;"><strong>${name}</strong></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Client Email:</strong></td>
+              <td style="padding: 8px 0; color: #0284c7; font-size: 15px;"><a href="mailto:${email}" style="color: #0284c7; text-decoration: none;">${email}</a></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Subject:</strong></td>
+              <td style="padding: 8px 0; color: #18181b; font-size: 15px;">${subject || 'General Inquiry'}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #71717a; font-size: 14px;"><strong>Theme Viewed:</strong></td>
+              <td style="padding: 8px 0; color: #71717a; font-size: 14px;">${theme || 'Daylight Atelier'}</td>
+            </tr>
+          </table>
+
+          <div style="background: #f8fafc; border-left: 4px solid #C5A059; padding: 16px; border-radius: 4px; margin: 20px 0;">
+            <p style="margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b; font-weight: 600;">Message Content:</p>
+            <p style="margin: 0; color: #334155; font-size: 15px; line-height: 1.6; white-space: pre-wrap;">${message}</p>
+          </div>
+
+          <div style="text-align: center; margin-top: 25px;">
+            <a href="mailto:${email}?subject=Re: ${encodeURIComponent(subject || 'Inquiry')}" style="display: inline-block; background: #C5A059; color: #ffffff; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;">Reply Directly to ${name} ↗</a>
+          </div>
+        </div>
+      </div>
+    `
+  };
+
+  try {
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': brevoApiKey,
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify(bodyData)
+    });
+    const result = await response.json();
+    console.log('Brevo transmission status:', response.status, result);
+    return response.ok;
+  } catch (err) {
+    console.error('Brevo API network error:', err);
+    return false;
+  }
+}
+
 // Contact Route
 app.post('/api/contact', async (req, res) => {
   try {
@@ -81,20 +155,16 @@ app.post('/api/contact', async (req, res) => {
       memoryStore.push(savedMessage);
     }
 
-    // Send email notification to Rethika if transporter is active
+    // Dispatch via Brevo API
+    await sendBrevoEmail({ name, email, subject, message, theme });
+
+    // Optional Nodemailer fallback
     if (transporter) {
       transporter.sendMail({
         from: `"Portfolio Concierge" <${process.env.EMAIL_USER}>`,
         to: process.env.EMAIL_NOTIFICATION_TO || 'rethikas2782@gmail.com',
         subject: `[Portfolio Contact] ${subject || 'New Message'} from ${name}`,
-        html: `
-          <h3>New Message Received via Portfolio</h3>
-          <p><strong>Name:</strong> ${name}</p>
-          <p><strong>Email:</strong> ${email}</p>
-          <p><strong>Theme:</strong> ${theme}</p>
-          <p><strong>Message:</strong></p>
-          <p style="background: #f4f4f4; padding: 12px; border-radius: 4px;">${message}</p>
-        `
+        html: `<p><strong>${name}</strong> (${email}) sent: ${message}</p>`
       }).catch(e => console.warn('Nodemailer error:', e.message));
     }
 

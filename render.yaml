@@ -11,3 +11,9 @@ services:
         value: production
       - key: MONGO_URI
         sync: false
+      - key: BREVO_API_KEY
+        sync: false
+      - key: BREVO_SENDER_EMAIL
+        value: rethikas2782@gmail.com
+      - key: NOTIFICATION_EMAIL
+        value: rethikas2782@gmail.com
