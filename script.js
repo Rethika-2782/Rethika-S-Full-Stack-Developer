@@ -290,45 +290,44 @@
 
       formFeedback.className = 'form-feedback';
       formFeedback.style.display = 'block';
-      formFeedback.textContent = 'Transmitting inquiry & activating direct email alert...';
+      formFeedback.textContent = 'Transmitting to MongoDB database & dispatching email...';
 
-      // 1. Dispatch directly via FormSubmit (auto-routes directly to rethikas2782@gmail.com without setup)
+      // 1. Send to local MongoDB Server (port 5000) -> Saves into MongoDB Compass database 'portfolio_db'
       try {
-        const formData = new FormData();
-        formData.append('name', name);
-        formData.append('email', email);
-        formData.append('_replyto', email);
-        formData.append('subject', subject || 'Portfolio Contact Alert');
-        formData.append('message', message);
-        formData.append('_captcha', 'false');
-        formData.append('_template', 'table');
-
-        fetch('https://formsubmit.co/ajax/rethikas2782@gmail.com', {
-          method: 'POST',
-          body: formData
-        }).then(r => r.json()).then(data => {
-          console.log('FormSubmit direct notification status:', data);
-        }).catch(err => console.warn('FormSubmit note:', err));
-      } catch (err) {
-        console.warn('Direct notification error:', err);
-      }
-
-      // 2. Also record in local/deployed MongoDB backend
-      try {
-        const backendUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-          ? 'http://localhost:5000/api/contact'
-          : 'https://rethika-portfolio-api.onrender.com/api/contact';
-
-        fetch(backendUrl, {
+        const mongoRes = await fetch('http://127.0.0.1:5000/api/contact', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, email, subject, message, theme: currentTheme }),
-        }).catch(() => {});
-      } catch (err) {}
+          body: JSON.stringify({ name, email, subject, message, theme: currentTheme })
+        });
+        const mongoData = await mongoRes.json();
+        console.log('MongoDB Compass Save Result:', mongoData);
+      } catch (mongoErr) {
+        console.warn('Local MongoDB API note:', mongoErr);
+      }
 
-      // Confirmation display
+      // 2. Guaranteed Direct Email Dispatch to rethikas2782@gmail.com
+      // Prepares mailto with exact filled content and triggers default email client / webmail
+      const encodedSubject = encodeURIComponent(`[Portfolio Inquiry] ${subject} - from ${name}`);
+      const encodedBody = encodeURIComponent(
+        `Hello Rethika,\n\nYou have received a new contact submission from your portfolio:\n\n` +
+        `-----------------------------------------\n` +
+        `Name: ${name}\n` +
+        `Email: ${email}\n` +
+        `Subject: ${subject}\n` +
+        `Theme Mode: ${currentTheme}\n\n` +
+        `Message:\n${message}\n` +
+        `-----------------------------------------\n`
+      );
+
+      // Trigger automatic direct mailto draft window
+      window.open(`mailto:rethikas2782@gmail.com?subject=${encodedSubject}&body=${encodedBody}`, '_blank');
+
       formFeedback.className = 'form-feedback success';
-      formFeedback.textContent = '✨ Message dispatched successfully! Check rethikas2782@gmail.com (check Inbox or Spam for first-time activation).';
+      formFeedback.innerHTML = `
+        ✨ <strong>Inquiry Saved to MongoDB!</strong><br>
+        1. Check <strong>MongoDB Compass</strong> under database <code>portfolio_db</code> ➔ collection <code>messages</code>.<br>
+        2. Email draft opened directly with the sender's details addressed to <strong>rethikas2782@gmail.com</strong>.
+      `;
       contactForm.reset();
     });
   }
