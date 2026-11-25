@@ -1,6 +1,12 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+let nodemailer;
+try {
+  nodemailer = require('nodemailer');
+} catch (e) {
+  nodemailer = null;
+}
 require('dotenv').config();
 
 const app = express();
@@ -14,7 +20,7 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/portfolio_
 
 mongoose.connect(MONGO_URI)
   .then(() => console.log('Successfully connected to MongoDB'))
-  .catch((err) => console.warn('MongoDB connection note: Make sure MongoDB is running or configure MONGO_URI in .env. Falling back gracefully. Error:', err.message));
+  .catch((err) => console.warn('MongoDB connection note: Falling back to local storage. Error:', err.message));
 
 // Message Schema
 const messageSchema = new mongoose.Schema({
@@ -28,8 +34,20 @@ const messageSchema = new mongoose.Schema({
 
 const Message = mongoose.model('Message', messageSchema);
 
-// In-memory fallback if MongoDB local service is temporarily offline
+// In-memory fallback if MongoDB is not reachable
 const memoryStore = [];
+
+// Optional Nodemailer transporter if email credentials are configured in .env
+let transporter = null;
+if (nodemailer && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+}
 
 // Contact Route
 app.post('/api/contact', async (req, res) => {
@@ -58,9 +76,26 @@ app.post('/api/contact', async (req, res) => {
         message,
         submittedAt: new Date(),
         clientTheme: theme || 'daylight-heritage',
-        note: 'Stored locally in session memory (configure active MongoDB URI to persist across restarts)'
+        note: 'Saved in memory'
       };
       memoryStore.push(savedMessage);
+    }
+
+    // Send email notification to Rethika if transporter is active
+    if (transporter) {
+      transporter.sendMail({
+        from: `"Portfolio Concierge" <${process.env.EMAIL_USER}>`,
+        to: process.env.EMAIL_NOTIFICATION_TO || 'rethikas2782@gmail.com',
+        subject: `[Portfolio Contact] ${subject || 'New Message'} from ${name}`,
+        html: `
+          <h3>New Message Received via Portfolio</h3>
+          <p><strong>Name:</strong> ${name}</p>
+          <p><strong>Email:</strong> ${email}</p>
+          <p><strong>Theme:</strong> ${theme}</p>
+          <p><strong>Message:</strong></p>
+          <p style="background: #f4f4f4; padding: 12px; border-radius: 4px;">${message}</p>
+        `
+      }).catch(e => console.warn('Nodemailer error:', e.message));
     }
 
     return res.status(201).json({
